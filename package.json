@@ -1,7 +1,7 @@
 {
   "name": "catalog-ai-saas",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Multi-tenant mini SaaS: product catalog + AI agent with tool calling",
   "workspaces": [
     "backend",
