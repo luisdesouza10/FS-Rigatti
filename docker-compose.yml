@@ -1,0 +1,71 @@
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    # Bound to this machine only: the database has no password, and the app may be
+    # opened to the local network (port 8080).
+    ports:
+      - "127.0.0.1:27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Fake inbox for development: catches every e-mail the API sends (invites, sign-up
+  # confirmation) and shows them at http://localhost:8025. Nothing leaves the machine.
+  mailpit:
+    image: axllent/mailpit:v1.33.1
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8025:8025" # web inbox (this machine only)
+      - "127.0.0.1:1025:1025" # SMTP, used by `npm run dev`
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      MONGO_URI: mongodb://mongo:27017/catalog_ai
+      CORS_ORIGIN: http://localhost:8080
+      UPLOAD_DIR: /app/uploads
+      JWT_SECRET: ${JWT_SECRET:-docker-local-secret-please-change-0123456789}
+      # One proxy (the frontend nginx) sits in front, so the first X-Forwarded-For hop is real.
+      TRUST_PROXY: 1
+      # Links in e-mails point to the app served by nginx. To open it to other devices on
+      # the Wi-Fi, set APP_URL in .env to this machine's network address (http://<ip>:8080).
+      APP_URL: ${APP_URL:-http://localhost:8080}
+      SMTP_URL: ${SMTP_URL:-smtp://mailpit:1025}
+    depends_on:
+      mongo:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    volumes:
+      - uploads:/app/uploads
+    # Reachable only through nginx. Publishing 4000 would let clients bypass the
+    # proxy and forge X-Forwarded-For.
+    expose:
+      - "4000"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+
+volumes:
+  mongo-data:
+  uploads:
